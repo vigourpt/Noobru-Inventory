@@ -1,0 +1,80 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Common function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if user is approved
+    function isApproved() {
+      return isAuthenticated() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.approved == true;
+    }
+    
+    // Check if user has admin role
+    function isAdmin() {
+      return isApproved() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Check if user has warehouse role
+    function isWarehouse() {
+      return isApproved() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'warehouse';
+    }
+    
+    // Check if user has fulfillment role
+    function isFulfillment() {
+      return isApproved() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'fulfillment';
+    }
+    
+    // Check if user has management role
+    function isManagement() {
+      return isApproved() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'management';
+    }
+    
+    // Users collection rules
+    match /users/{userId} {
+      // Users can read and write their own document
+      allow read: if isAuthenticated() && request.auth.uid == userId;
+      // Only admins can read all user documents
+      allow read: if isAdmin();
+      // Only admins can create/update/delete user documents
+      allow write: if isAdmin();
+      // Allow creation of own user document during signup
+      allow create: if request.auth.uid == userId;
+    }
+    
+    // Inventory collection rules
+    match /inventory/{itemId} {
+      // All approved users can read inventory
+      allow read: if isApproved();
+      // Only warehouse staff and admins can write to inventory
+      allow write: if isWarehouse() || isAdmin();
+    }
+    
+    // Movements collection rules
+    match /movements/{movementId} {
+      // All approved users can read movements
+      allow read: if isApproved();
+      // Warehouse and fulfillment staff can create movements
+      allow create: if isWarehouse() || isFulfillment() || isAdmin();
+      // Only admins can update or delete movements
+      allow update, delete: if isAdmin();
+    }
+    
+    // Orders collection rules
+    match /orders/{orderId} {
+      // All approved users can read orders
+      allow read: if isApproved();
+      // Fulfillment staff and admins can create and update orders
+      allow create, update: if isFulfillment() || isAdmin();
+      // Only admins can delete orders
+      allow delete: if isAdmin();
+    }
+  }
+}
